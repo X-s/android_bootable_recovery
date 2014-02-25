@@ -6,9 +6,9 @@
 
 1、采用Ruby生成字库方法汉化
 
-2、针对MTK进行了部分修改
+2、针对MTK平台进行了部分修改
 ```
-* 修改mmcutils.c 支持MTK备份“其它平台请注释掉MTK相关”
+BOARD_RECOVERY_MTK := true 调用MTK平台备份源码,不添加此配置则调用默认备份源码
 
 ```
 

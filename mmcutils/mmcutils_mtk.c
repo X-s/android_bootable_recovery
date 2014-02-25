@@ -439,7 +439,6 @@ mmc_raw_copy (const MmcPartition *partition, char *in_file) {
         goto ERROR2;
 
     fseek(in, 0L, SEEK_END);
-    //sz = ftell(in);
     sz = 1048576*6;//mtk
     fseek(in, 0L, SEEK_SET);
 
@@ -491,7 +490,6 @@ mmc_raw_dump_internal (const char* in_file, const char *out_file) {
         goto ERROR2;
 
     fseek(in, 0L, SEEK_END);
-    //sz = ftell(in);
     sz = 1048576*6;//mtk
     fseek(in, 0L, SEEK_SET);
 
