@@ -1,5 +1,7 @@
 ##Cwm-recovery中文源码
 
+本人开源个人`Recovery`项目，也希望各位用到我的代码的时候能提到我的名字，多谢
+
 作者：[Xs](http://www.weibo.com/acexs)
 
 源码说明
