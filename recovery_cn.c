@@ -149,7 +149,7 @@ fopen_path(const char *path, const char *mode) {
     if (strchr("wa", mode[0])) dirCreateHierarchy(path, 0777, NULL, 1, sehandle);
 
     FILE *fp = fopen(path, mode);
-    if (fp == NULL && path != COMMAND_FILE) LOGE("Can't open %s\n", path);
+    if (fp == NULL && path != COMMAND_FILE) LOGE("打不开 %s\n", path);
     return fp;
 }
 
@@ -253,11 +253,11 @@ static void
 copy_log_file(const char* destination, int append) {
     FILE *log = fopen_path(destination, append ? "a" : "w");
     if (log == NULL) {
-        LOGE("Can't open %s\n", destination);
+        LOGE("打不开 %s\n", destination);
     } else {
         FILE *tmplog = fopen(TEMPORARY_LOG_FILE, "r");
         if (tmplog == NULL) {
-            LOGE("Can't open %s\n", TEMPORARY_LOG_FILE);
+            LOGE("打不开 %s\n", TEMPORARY_LOG_FILE);
         } else {
             if (append) {
                 fseek(tmplog, tmplog_offset, SEEK_SET);  // Since last write
@@ -284,7 +284,7 @@ finish_recovery(const char *send_intent) {
     if (send_intent != NULL) {
         FILE *fp = fopen_path(INTENT_FILE, "w");
         if (fp == NULL) {
-            LOGE("Can't open %s\n", INTENT_FILE);
+            LOGE("打不开 %s\n", INTENT_FILE);
         } else {
             fputs(send_intent, fp);
             check_and_fclose(fp, INTENT_FILE);
@@ -314,7 +314,7 @@ static int
 erase_volume(const char *volume) {
     ui_set_background(BACKGROUND_ICON_INSTALLING);
     ui_show_indeterminate_progress();
-    ui_print("Formatting %s...\n", volume);
+    ui_print("正在格式化%s...\n", volume);
 
     if (strcmp(volume, "/cache") == 0) {
         // Any part of the log we'd copied to cache is now gone.
@@ -329,18 +329,18 @@ erase_volume(const char *volume) {
 static char*
 copy_sideloaded_package(const char* original_path) {
   if (ensure_path_mounted(original_path) != 0) {
-    LOGE("Can't mount %s\n", original_path);
+    LOGE("无法挂载 %s\n", original_path);
     return NULL;
   }
 
   if (ensure_path_mounted(SIDELOAD_TEMP_DIR) != 0) {
-    LOGE("Can't mount %s\n", SIDELOAD_TEMP_DIR);
+    LOGE("无法挂载 %s\n", SIDELOAD_TEMP_DIR);
     return NULL;
   }
 
   if (mkdir(SIDELOAD_TEMP_DIR, 0700) != 0) {
     if (errno != EEXIST) {
-      LOGE("Can't mkdir %s (%s)\n", SIDELOAD_TEMP_DIR, strerror(errno));
+      LOGE("无法创建 %s (%s)\n", SIDELOAD_TEMP_DIR, strerror(errno));
       return NULL;
     }
   }
@@ -506,11 +506,11 @@ get_menu_selection(char** headers, char** items, int menu_only,
                 wrap_count = 0;
                 if (ui_get_rainbow_mode()) {
                     ui_set_rainbow_mode(0);
-                    ui_print("Rainbow Mode Off!\n");
+                    ui_print("彩虹模式关闭!\n");
                 }
                 else {
                     ui_set_rainbow_mode(1);
-                    ui_print("Rainbow Mode Open!\n");
+                    ui_print("彩虹模式开启!\n");
                 }
             }
         }
@@ -530,7 +530,7 @@ static int
 update_directory(const char* path, const char* unmount_when_done) {
     ensure_path_mounted(path);
 
-    const char* MENU_HEADERS[] = { "Choose a package to install:",
+    const char* MENU_HEADERS[] = { "选择一个刷机包安装:",
                                    path,
                                    "",
                                    NULL };
@@ -538,7 +538,7 @@ update_directory(const char* path, const char* unmount_when_done) {
     struct dirent* de;
     d = opendir(path);
     if (d == NULL) {
-        LOGE("error opening %s: %s\n", path, strerror(errno));
+        LOGE("打不开 %s: %s\n", path, strerror(errno));
         if (unmount_when_done != NULL) {
             ensure_path_unmounted(unmount_when_done);
         }
@@ -626,7 +626,7 @@ update_directory(const char* path, const char* unmount_when_done) {
             strlcat(new_path, "/", PATH_MAX);
             strlcat(new_path, item, PATH_MAX);
 
-            ui_print("\n-- Install %s ...\n", path);
+            ui_print("\n-- 安装 %s ...\n", path);
             set_sdcard_update_bootloader_message();
             char* copy = copy_sideloaded_package(new_path);
             if (unmount_when_done != NULL) {
@@ -655,10 +655,10 @@ update_directory(const char* path, const char* unmount_when_done) {
 
 static void
 wipe_data(int confirm) {
-    if (confirm && !confirm_selection( "Confirm wipe of all user data?", "Yes - Wipe all user data"))
+    if (confirm && !confirm_selection( "确认是否清除所有数据?", "确认 -- 删除所有用户数据"))
         return;
 
-    ui_print("\n-- Wiping data...\n");
+    ui_print("\n-- 格式化 Data...\n");
     device_wipe_data();
     erase_volume("/data");
     erase_volume("/cache");
@@ -667,7 +667,7 @@ wipe_data(int confirm) {
     }
     erase_volume("/sd-ext");
     erase_volume("/sdcard/.android_secure");
-    ui_print("Data wipe complete.\n");
+    ui_print("格式化 Data 完成.\n");
 }
 
 static void headless_wait() {
@@ -715,11 +715,11 @@ prompt_and_wait() {
                 break;
 
             case ITEM_WIPE_CACHE:
-                if (confirm_selection("Confirm wipe?", "Yes - Wipe Cache"))
+                if (confirm_selection("确认清除?", "确认 - 清除缓存"))
                 {
-                    ui_print("\n-- Wiping cache...\n");
+                    ui_print("\n-- 正在清除缓存...\n");
                     erase_volume("/cache");
-                    ui_print("Cache wipe complete.\n");
+                    ui_print("清除缓存完毕.\n");
                     if (!ui_text_visible()) return;
                 }
                 break;
@@ -762,11 +762,11 @@ setup_adbd() {
     if (stat(key_src, &f) == 0) {
         FILE *file_src = fopen(key_src, "r");
         if (file_src == NULL) {
-            LOGE("Can't open %s\n", key_src);
+            LOGE("打不开 %s\n", key_src);
         } else {
             FILE *file_dest = fopen(key_dest, "w");
             if (file_dest == NULL) {
-                LOGE("Can't open %s\n", key_dest);
+                LOGE("打不开 %s\n", key_dest);
             } else {
                 char buf[4096];
                 while (fgets(buf, sizeof(buf), file_src)) fputs(buf, file_dest);
@@ -917,14 +917,14 @@ main(int argc, char **argv) {
     sehandle = selabel_open(SELABEL_CTX_FILE, seopts, 1);
 
     if (!sehandle) {
-        fprintf(stderr, "Warning: No file_contexts\n");
+        fprintf(stderr, "警告: 没有文件内容\n");
         // ui_print("警告: 没有文件内容 \n");
     }
 
     LOGI("device_recovery_start()\n");
     device_recovery_start();
 
-    printf("Command:");
+    printf("命令:");
     for (arg = 0; arg < argc; arg++) {
         printf(" \"%s\"", argv[arg]);
     }
@@ -953,7 +953,7 @@ main(int argc, char **argv) {
 
     if (update_package != NULL) {
         status = install_package(update_package);
-        if (status != INSTALL_SUCCESS) ui_print("Installation aborted.\n");
+        if (status != INSTALL_SUCCESS) ui_print("安装终止.\n");
     } else if (wipe_data) {
         if (device_wipe_data()) status = INSTALL_ERROR;
         ignore_data_media_workaround(1);
@@ -961,10 +961,10 @@ main(int argc, char **argv) {
         ignore_data_media_workaround(0);
         if (has_datadata() && erase_volume("/datadata")) status = INSTALL_ERROR;
         if (wipe_cache && erase_volume("/cache")) status = INSTALL_ERROR;
-        if (status != INSTALL_SUCCESS) ui_print("Data wipe failed.\n");
+        if (status != INSTALL_SUCCESS) ui_print("格式化 Data 失败.\n");
     } else if (wipe_cache) {
         if (wipe_cache && erase_volume("/cache")) status = INSTALL_ERROR;
-        if (status != INSTALL_SUCCESS) ui_print("Cache wipe failed.\n");
+        if (status != INSTALL_SUCCESS) ui_print("格式化 Cache 失败.\n");
     } else if (sideload) {
         signature_check_enabled = 0;
         if (!headless)
@@ -1024,11 +1024,11 @@ main(int argc, char **argv) {
 
     sync();
     if(!poweroff) {
-        ui_print("Rebooting...\n");
+        ui_print("正在重启...\n");
         android_reboot(ANDROID_RB_RESTART, 0, 0);
     }
     else {
-        ui_print("Shutting down...\n");
+        ui_print("正在关机...\n");
         android_reboot(ANDROID_RB_POWEROFF, 0, 0);
     }
     return EXIT_SUCCESS;

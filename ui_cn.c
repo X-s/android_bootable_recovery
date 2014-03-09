@@ -819,7 +819,7 @@ int ui_start_menu(char** headers, char** items, int initial_selection) {
         }
 
         if (gShowBackButton && !ui_root_menu) {
-            strcpy(menu[i], " [*] +++++Go back+++++");
+            strcpy(menu[i], " [*] +++++返回+++++");
             ++i;
         }
 

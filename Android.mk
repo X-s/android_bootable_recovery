@@ -4,22 +4,27 @@ include $(CLEAR_VARS)
 commands_recovery_local_path := $(LOCAL_PATH)
 # LOCAL_CPP_EXTENSION := .c
 
+#Chinese
+ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
+	chinese := _cn
+endif
+
 LOCAL_SRC_FILES := \
-    recovery.c \
+    recovery$(chinese).c \
     bootloader.c \
-    install.c \
+    install$(chinese).c \
     roots.c \
-    ui.c \
+    ui$(chinese).c \
     mounts.c \
-    extendedcommands.c \
-    nandroid.c \
+    extendedcommands$(chinese).c \
+    nandroid$(chinese).c \
     ../../system/core/toolbox/reboot.c \
     ../../system/core/toolbox/dynarray.c \
     firmware.c \
-    edifyscripting.c \
+    edifyscripting$(chinese).c \
     prop.c \
-    default_recovery_ui.c \
-    adb_install.c \
+    default_recovery_ui$(chinese).c \
+    adb_install$(chinese).c \
     verifier.c
 
 ADDITIONAL_RECOVERY_FILES := $(shell echo $$ADDITIONAL_RECOVERY_FILES)
@@ -34,21 +39,24 @@ RECOVERY_NAME := ClockworkMod Recovery
 LOCAL_CFLAGS += -DI_AM_KOUSH
 else
 ifndef RECOVERY_NAME
-RECOVERY_NAME := 安热论坛中文恢复系统
+RECOVERY_NAME := Xs Recovery
 endif
 endif
 
 RECOVERY_VERSION := $(RECOVERY_NAME)
-RECOVERY_WELCOME := 欢迎使用安热论坛中文恢复系统
-RECOVERY_BUILD_DATE := 编译日期: $(shell date +%x%R)
-RECOVERY_VERSION_INFO := 技术支持：weibo.com/acexs
-RECOVERY_BBS_INFO := 交流论坛: bbs.apkhot.com
-
+ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
+	RECOVERY_WELCOME := 欢迎使用中文恢复系统
+	RECOVERY_BUILD_DATE := 编译日期: $(shell date +%x%R)
+	RECOVERY_VERSION_INFO := 技术支持：weibo.com/acexs
+else
+	RECOVERY_WELCOME := Welcome to use Xs Recovery
+	RECOVERY_BUILD_DATE := Build Date:$(shell date +%x%R)
+	RECOVERY_VERSION_INFO := Technical Support:weibo.com/acexs
+endif
 LOCAL_CFLAGS += -DRECOVERY_VERSION="$(RECOVERY_VERSION)"
 LOCAL_CFLAGS += -DRECOVERY_WELCOME="$(RECOVERY_WELCOME)"
 LOCAL_CFLAGS += -DRECOVERY_BUILD_DATE="$(RECOVERY_BUILD_DATE)"
 LOCAL_CFLAGS += -DRECOVERY_VERSION_INFO="$(RECOVERY_VERSION_INFO)"
-LOCAL_CFLAGS += -DRECOVERY_BBS_INFO="$(RECOVERY_BBS_INFO)"
 RECOVERY_API_VERSION := 2
 LOCAL_CFLAGS += -DRECOVERY_API_VERSION=$(RECOVERY_API_VERSION)
 
