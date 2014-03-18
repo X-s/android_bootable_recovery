@@ -17,7 +17,7 @@ BOARD_RECOVERY_MTK := true 调用MTK平台备份源码,不添加此配置则调�
 3、中文调用要在Device里添加如下代码来调用中文字库
 ```
 BOARD_RECOVERY_LANG_CHINESE := true #中文显示,不添加此项则默认英文界面
-BOARD_USE_CUSTOM_RECOVERY_FONT := \"fontcn_15x24.h\" #中文字体,英文界面需要更改为英文字体调用
+BOARD_USE_CUSTOM_RECOVERY_FONT := \"fontcn_15x24.h\" #中文字体,英文界面需要更改位英文字体调用
 ```
 
 3、滑动触摸调用要在Device里添加如下代码来调用滑动触摸

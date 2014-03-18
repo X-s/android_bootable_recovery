@@ -46,11 +46,11 @@ endif
 RECOVERY_VERSION := $(RECOVERY_NAME)
 ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
 	RECOVERY_WELCOME := 欢迎使用中文恢复系统
-	RECOVERY_BUILD_DATE := 编译日期: $(shell date +%x%R)
+	RECOVERY_BUILD_DATE := 编译日期: $(shell date +"%Y%m%d")
 	RECOVERY_VERSION_INFO := 技术支持：weibo.com/acexs
 else
 	RECOVERY_WELCOME := Welcome to use Xs Recovery
-	RECOVERY_BUILD_DATE := Build Date:$(shell date +%x%R)
+	RECOVERY_BUILD_DATE := Build Date:$(shell date +"%Y%m%d")
 	RECOVERY_VERSION_INFO := Technical Support:weibo.com/acexs
 endif
 LOCAL_CFLAGS += -DRECOVERY_VERSION="$(RECOVERY_VERSION)"
