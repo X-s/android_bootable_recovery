@@ -46,7 +46,6 @@
 int signature_check_enabled = 1;
 int script_assert_enabled = 1;
 static const char *SDCARD_UPDATE_FILE = "/sdcard/update.zip";
-static const char *AROMA_INSTALL = "/sdcard/Aromafm_xs.zip";
 
 int
 get_filtered_menu_selection(char** headers, char** items, int menu_only, int initial_selection, int items_count) {
@@ -1441,8 +1440,7 @@ void show_xs_tools()
                                     NULL
     };
 
-    static char* list[] = { "文件管理器",
-			    "清除锁屏密码",
+    static char* list[] = { "清除锁屏密码",
                             NULL
     };
 
@@ -1454,12 +1452,6 @@ void show_xs_tools()
         switch (chosen_item)
         {
 		case 0:
-		{
-		install_zip(AROMA_INSTALL);
-		break;
-		}
-		
-		case 1:
 		{
 		if (confirm_selection( "确认清除?", "确认 - 清除锁屏密码"))
 		{
