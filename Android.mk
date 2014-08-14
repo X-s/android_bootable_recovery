@@ -1,62 +1,66 @@
 LOCAL_PATH := $(call my-dir)
+
+ifeq ($(RECOVERY_VARIANT),)
+ifeq ($(LOCAL_PATH),bootable/recovery)
+RECOVERY_VARIANT := cwm
+endif
+endif
+
+ifeq ($(RECOVERY_VARIANT),cwm)
+
 include $(CLEAR_VARS)
 
 commands_recovery_local_path := $(LOCAL_PATH)
 # LOCAL_CPP_EXTENSION := .c
 
-#Chinese
-ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
-	chinese := _cn
-endif
-
 LOCAL_SRC_FILES := \
-    recovery$(chinese).c \
+    recovery.c \
     bootloader.c \
-    install$(chinese).c \
+    install.c \
     roots.c \
-    ui$(chinese).c \
+    ui.c \
     mounts.c \
-    extendedcommands$(chinese).c \
-    nandroid$(chinese).c \
-    ../../system/core/toolbox/reboot.c \
+    extendedcommands.c \
+    nandroid.c \
+    nandroid_md5.c \
+    reboot.c \
     ../../system/core/toolbox/dynarray.c \
+    ../../system/core/toolbox/newfs_msdos.c \
     firmware.c \
-    edifyscripting$(chinese).c \
+    edifyscripting.c \
     prop.c \
-    default_recovery_ui$(chinese).c \
-    adb_install$(chinese).c \
-    verifier.c
+    adb_install.c \
+    verifier.c \
+    ../../system/vold/vdc.c \
+    propsrvc/legacy_property_service.c
 
 ADDITIONAL_RECOVERY_FILES := $(shell echo $$ADDITIONAL_RECOVERY_FILES)
 LOCAL_SRC_FILES += $(ADDITIONAL_RECOVERY_FILES)
 
+ifndef BOARD_TOUCH_RECOVERY
+ifdef BOARD_RECOVERY_SWIPE
+LOCAL_SRC_FILES += input/touch.c
+endif
+endif
+
 LOCAL_MODULE := recovery
 
 LOCAL_FORCE_STATIC_EXECUTABLE := true
+
+RECOVERY_FSTAB_VERSION := 2
 
 ifdef I_AM_KOUSH
 RECOVERY_NAME := ClockworkMod Recovery
 LOCAL_CFLAGS += -DI_AM_KOUSH
 else
 ifndef RECOVERY_NAME
-RECOVERY_NAME := Xs Recovery
+RECOVERY_NAME := CWM-based Recovery
 endif
 endif
 
-RECOVERY_VERSION := $(RECOVERY_NAME)
-ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
-	RECOVERY_WELCOME := 欢迎使用中文恢复系统
-	RECOVERY_BUILD_DATE := 编译日期: $(shell date +"%Y%m%d")
-	RECOVERY_VERSION_INFO := 技术支持：weibo.com/acexs
-else
-	RECOVERY_WELCOME := Welcome to use Xs Recovery
-	RECOVERY_BUILD_DATE := Build Date:$(shell date +"%Y%m%d")
-	RECOVERY_VERSION_INFO := Technical Support:weibo.com/acexs
-endif
+RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.5.0
+
 LOCAL_CFLAGS += -DRECOVERY_VERSION="$(RECOVERY_VERSION)"
-LOCAL_CFLAGS += -DRECOVERY_WELCOME="$(RECOVERY_WELCOME)"
-LOCAL_CFLAGS += -DRECOVERY_BUILD_DATE="$(RECOVERY_BUILD_DATE)"
-LOCAL_CFLAGS += -DRECOVERY_VERSION_INFO="$(RECOVERY_VERSION_INFO)"
 RECOVERY_API_VERSION := 2
 LOCAL_CFLAGS += -DRECOVERY_API_VERSION=$(RECOVERY_API_VERSION)
 
@@ -75,7 +79,11 @@ BOARD_RECOVERY_CHAR_HEIGHT := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | c
 
 LOCAL_CFLAGS += -DBOARD_RECOVERY_CHAR_WIDTH=$(BOARD_RECOVERY_CHAR_WIDTH) -DBOARD_RECOVERY_CHAR_HEIGHT=$(BOARD_RECOVERY_CHAR_HEIGHT)
 
-BOARD_RECOVERY_DEFINES := BOARD_RECOVERY_SWIPE BOARD_HAS_NO_SELECT_BUTTON BOARD_UMS_LUNFILE BOARD_RECOVERY_ALWAYS_WIPES BOARD_RECOVERY_HANDLES_MOUNT BOARD_TOUCH_RECOVERY RECOVERY_EXTEND_NANDROID_MENU TARGET_USE_CUSTOM_LUN_FILE_PATH TARGET_DEVICE
+BOARD_RECOVERY_DEFINES := BOARD_HAS_NO_SELECT_BUTTON BOARD_UMS_LUNFILE BOARD_RECOVERY_ALWAYS_WIPES BOARD_RECOVERY_HANDLES_MOUNT BOARD_TOUCH_RECOVERY RECOVERY_EXTEND_NANDROID_MENU TARGET_USE_CUSTOM_LUN_FILE_PATH TARGET_DEVICE TARGET_RECOVERY_FSTAB BOARD_NATIVE_DUALBOOT BOARD_NATIVE_DUALBOOT_SINGLEDATA BOARD_RECOVERY_BLDRMSG_OFFSET
+
+ifndef BOARD_TOUCH_RECOVERY
+BOARD_RECOVERY_DEFINES += BOARD_RECOVERY_SWIPE BOARD_RECOVERY_SWIPE_SWAPXY
+endif
 
 $(foreach board_define,$(BOARD_RECOVERY_DEFINES), \
   $(if $($(board_define)), \
@@ -85,9 +93,17 @@ $(foreach board_define,$(BOARD_RECOVERY_DEFINES), \
 
 LOCAL_STATIC_LIBRARIES :=
 
-LOCAL_CFLAGS += -DUSE_EXT4
-LOCAL_C_INCLUDES += system/extras/ext4_utils
+LOCAL_CFLAGS += -DUSE_EXT4 -DMINIVOLD
+LOCAL_C_INCLUDES += system/extras/ext4_utils system/core/fs_mgr/include external/fsck_msdos
+LOCAL_C_INCLUDES += system/vold external/openssl/include
+
 LOCAL_STATIC_LIBRARIES += libext4_utils_static libz libsparse_static
+
+ifeq ($(ENABLE_LOKI_RECOVERY),true)
+  LOCAL_CFLAGS += -DENABLE_LOKI
+  LOCAL_STATIC_LIBRARIES += libloki_static
+  LOCAL_SRC_FILES += loki/loki_recovery.c
+endif
 
 # This binary is in the recovery ramdisk, which is otherwise a copy of root.
 # It gets copied there in config/Makefile.  LOCAL_MODULE_TAGS suppresses
@@ -102,27 +118,44 @@ else
   LOCAL_SRC_FILES += $(BOARD_CUSTOM_RECOVERY_KEYMAPPING)
 endif
 
+ifeq ($(BOARD_CUSTOM_RECOVERY_UI),)
+  LOCAL_SRC_FILES += default_recovery_ui.c
+else
+  LOCAL_SRC_FILES += $(BOARD_CUSTOM_RECOVERY_UI)
+endif
+
+LOCAL_STATIC_LIBRARIES += libvoldclient libsdcard libminipigz libfsck_msdos
 LOCAL_STATIC_LIBRARIES += libmake_ext4fs libext4_utils_static libz libsparse_static
+
+ifeq ($(TARGET_USERIMAGES_USE_F2FS), true)
+LOCAL_CFLAGS += -DUSE_F2FS
+LOCAL_STATIC_LIBRARIES += libmake_f2fs libfsck_f2fs libfibmap_f2fs
+endif
+
 LOCAL_STATIC_LIBRARIES += libminzip libunz libmincrypt
 
 LOCAL_STATIC_LIBRARIES += libminizip libminadbd libedify libbusybox libmkyaffs2image libunyaffs liberase_image libdump_image libflash_image
+LOCAL_LDFLAGS += -Wl,--no-fatal-warnings
 
-LOCAL_STATIC_LIBRARIES += libdedupe libcrypto_static libcrecovery libflashutils libmtdutils libmmcutils libbmlutils
+LOCAL_STATIC_LIBRARIES += libfs_mgr libdedupe libcrypto_static libcrecovery libflashutils libmtdutils libmmcutils libbmlutils
 
 ifeq ($(BOARD_USES_BML_OVER_MTD),true)
 LOCAL_STATIC_LIBRARIES += libbml_over_mtd
 endif
 
-LOCAL_STATIC_LIBRARIES += libminui libpixelflinger_static libpng libcutils
+LOCAL_STATIC_LIBRARIES += libminui libpixelflinger_static libpng libcutils liblog
 LOCAL_STATIC_LIBRARIES += libstdc++ libc
 
 LOCAL_STATIC_LIBRARIES += libselinux
-
-LOCAL_C_INCLUDES += system/extras/ext4_utils
+LOCAL_STATIC_LIBRARIES += libcrypto_static
 
 include $(BUILD_EXECUTABLE)
 
-RECOVERY_LINKS := bu make_ext4fs edify busybox flash_image dump_image mkyaffs2image unyaffs erase_image nandroid reboot volume setprop getprop dedupe minizip
+RECOVERY_LINKS := bu make_ext4fs edify busybox flash_image dump_image mkyaffs2image unyaffs erase_image nandroid reboot volume setprop getprop start stop dedupe minizip setup_adbd fsck_msdos newfs_msdos vdc sdcard pigz
+
+ifeq ($(TARGET_USERIMAGES_USE_F2FS), true)
+RECOVERY_LINKS += mkfs.f2fs fsck.f2fs fibmap.f2fs
+endif
 
 # nc is provided by external/netcat
 RECOVERY_SYMLINKS := $(addprefix $(TARGET_RECOVERY_ROOT_OUT)/sbin/,$(RECOVERY_LINKS))
@@ -149,14 +182,6 @@ $(RECOVERY_BUSYBOX_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
 ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS) 
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := nandroid-md5.sh
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
-LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
-LOCAL_SRC_FILES := nandroid-md5.sh
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
 LOCAL_MODULE := killrecovery.sh
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
@@ -167,6 +192,8 @@ include $(BUILD_PREBUILT)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := verifier_test.c verifier.c
+
+LOCAL_C_INCLUDES += system/extras/ext4_utils system/core/fs_mgr/include
 
 LOCAL_MODULE := verifier_test
 
@@ -194,4 +221,8 @@ include $(commands_recovery_local_path)/updater/Android.mk
 include $(commands_recovery_local_path)/applypatch/Android.mk
 include $(commands_recovery_local_path)/utilities/Android.mk
 include $(commands_recovery_local_path)/su/Android.mk
+include $(commands_recovery_local_path)/voldclient/Android.mk
+include $(commands_recovery_local_path)/loki/Android.mk
 commands_recovery_local_path :=
+
+endif

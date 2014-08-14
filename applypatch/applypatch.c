@@ -63,7 +63,7 @@ int LoadFileContents(const char* filename, FileContents* file,
 
     if (stat(filename, &file->st) != 0) {
         printf("failed to stat \"%s\": %s\n", filename, strerror(errno));
-        return -1;
+        return (errno == ENOENT ? -ENOENT : -1);
     }
 
     file->size = file->st.st_size;
@@ -101,7 +101,7 @@ int LoadFileContents(const char* filename, FileContents* file,
         }
     }
 
-    SHA(file->data, file->size, file->sha1);
+    SHA_hash(file->data, file->size, file->sha1);
     return 0;
 }
 
@@ -421,18 +421,99 @@ int WriteToPartition(unsigned char* data, size_t len,
             break;
 
         case EMMC:
-            ;
-            FILE* f = fopen(partition, "wb");
-            if (fwrite(data, 1, len, f) != len) {
-                printf("short write writing to %s (%s)\n",
-                       partition, strerror(errno));
+        {
+            size_t start = 0;
+            int success = 0;
+            int fd = open(partition, O_RDWR);
+            if (fd < 0) {
+                printf("failed to open %s: %s\n", partition, strerror(errno));
                 return -1;
             }
-            if (fclose(f) != 0) {
+            int attempt;
+
+            for (attempt = 0; attempt < 2; ++attempt) {
+                lseek(fd, start, SEEK_SET);
+                while (start < len) {
+                    size_t to_write = len - start;
+                    if (to_write > 1<<20) to_write = 1<<20;
+
+                    ssize_t written = write(fd, data+start, to_write);
+                    if (written < 0) {
+                        if (errno == EINTR) {
+                            written = 0;
+                        } else {
+                            printf("failed write writing to %s (%s)\n",
+                                   partition, strerror(errno));
+                            return -1;
+                        }
+                    }
+                    start += written;
+                }
+                fsync(fd);
+
+                // drop caches so our subsequent verification read
+                // won't just be reading the cache.
+                sync();
+                int dc = open("/proc/sys/vm/drop_caches", O_WRONLY);
+                write(dc, "3\n", 2);
+                close(dc);
+                sleep(1);
+                printf("  caches dropped\n");
+
+                // verify
+                lseek(fd, 0, SEEK_SET);
+                unsigned char buffer[4096];
+                start = len;
+                size_t p;
+                for (p = 0; p < len; p += sizeof(buffer)) {
+                    size_t to_read = len - p;
+                    if (to_read > sizeof(buffer)) to_read = sizeof(buffer);
+
+                    size_t so_far = 0;
+                    while (so_far < to_read) {
+                        ssize_t read_count = read(fd, buffer+so_far, to_read-so_far);
+                        if (read_count < 0) {
+                            if (errno == EINTR) {
+                                read_count = 0;
+                            } else {
+                                printf("verify read error %s at %d: %s\n",
+                                       partition, p, strerror(errno));
+                                return -1;
+                            }
+                        }
+                        if ((size_t)read_count < to_read) {
+                            printf("short verify read %s at %d: %d %d %s\n",
+                                   partition, p, read_count, to_read, strerror(errno));
+                        }
+                        so_far += read_count;
+                    }
+
+                    if (memcmp(buffer, data+p, to_read)) {
+                        printf("verification failed starting at %d\n", p);
+                        start = p;
+                        break;
+                    }
+                }
+
+                if (start == len) {
+                    printf("verification read succeeded (attempt %d)\n", attempt+1);
+                    success = true;
+                    break;
+                }
+            }
+
+            if (!success) {
+                printf("failed to verify after all attempts\n");
+                return -1;
+            }
+
+            if (close(fd) != 0) {
                 printf("error closing %s (%s)\n", partition, strerror(errno));
                 return -1;
             }
+            sync();
             break;
+        }
     }
 
     free(copy);
@@ -473,7 +554,7 @@ int ParseSha1(const char* str, uint8_t* digest) {
 // Search an array of sha1 strings for one matching the given sha1.
 // Return the index of the match on success, or -1 if no match is
 // found.
-int FindMatchingPatch(uint8_t* sha1, const char** patch_sha1_str,
+int FindMatchingPatch(uint8_t* sha1, char* const * const patch_sha1_str,
                       int num_patches) {
     int i;
     uint8_t patch_sha1[SHA_DIGEST_SIZE];
@@ -498,7 +579,12 @@ int applypatch_check(const char* filename,
     // LoadFileContents is successful.  (Useful for reading
     // partitions, where the filename encodes the sha1s; no need to
     // check them twice.)
-    if (LoadFileContents(filename, &file, RETOUCH_DO_MASK) != 0 ||
+    int filestate = LoadFileContents(filename, &file, RETOUCH_DO_MASK);
+    if (filestate == -ENOENT) {
+        return -ENOENT;
+    }
+
+    if (filestate != 0 ||
         (num_patches > 0 &&
          FindMatchingPatch(file.sha1, patch_sha1_str, num_patches) < 0)) {
         printf("file \"%s\" doesn't have any of expected "

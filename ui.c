@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
+ * Copyright (C) 2014 The CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,12 +30,18 @@
 #include <unistd.h>
 
 #include "common.h"
-#include <cutils/android_reboot.h>
-#include <cutils/properties.h>
+#include "cutils/android_reboot.h"
+#include "cutils/properties.h"
 #include "minui/minui.h"
 #include "recovery_ui.h"
+#include "voldclient/voldclient.h"
+
+#ifdef BOARD_RECOVERY_SWIPE
+#include "input/touch.h"
+#endif
 
 extern int __system(const char *command);
+extern int volumes_changed();
 
 #if defined(BOARD_HAS_NO_SELECT_BUTTON) || defined(BOARD_TOUCH_RECOVERY)
 static int gShowBackButton = 1;
@@ -44,18 +51,23 @@ static int gShowBackButton = 0;
 
 #define MAX_COLS 96
 #define MAX_ROWS 32
-
 #define MENU_MAX_COLS 64
 #define MENU_MAX_ROWS 250
+#define MENU_ITEM_HEADER " - "
+#define MENU_ITEM_HEADER_LENGTH strlen(MENU_ITEM_HEADER)
 
 #define MIN_LOG_ROWS 3
 
 #define CHAR_WIDTH BOARD_RECOVERY_CHAR_WIDTH
 #define CHAR_HEIGHT BOARD_RECOVERY_CHAR_HEIGHT
 
+// Delay in seconds to refresh clock and USB plugged volumes
+#define REFRESH_TIME_USB_INTERVAL 5
+
 #define UI_WAIT_KEY_TIMEOUT_SEC    3600
 #define UI_KEY_REPEAT_INTERVAL 80
 #define UI_KEY_WAIT_REPEAT 400
+#define UI_MIN_PROG_DELTA_MS 200
 
 UIParameters ui_parameters = {
     6,       // indeterminate progress bar frames
@@ -75,23 +87,26 @@ static int ui_has_initialized = 0;
 static int ui_log_stdout = 1;
 
 static int boardEnableKeyRepeat = 0;
-static int boardRepeatableKeys[64], boardNumRepeatableKeys = 0;
+static int boardRepeatableKeys[64];
+static int boardNumRepeatableKeys = 0;
 
 static const struct { gr_surface* surface; const char *name; } BITMAPS[] = {
-    { &gBackgroundIcon[BACKGROUND_ICON_INSTALLING], "icon_installing" },
-    { &gBackgroundIcon[BACKGROUND_ICON_ERROR],      "icon_error" },
-    { &gBackgroundIcon[BACKGROUND_ICON_CLOCKWORK],  "icon_clockwork" },
-    { &gBackgroundIcon[BACKGROUND_ICON_CID],  "icon_cid" },
+    { &gBackgroundIcon[BACKGROUND_ICON_INSTALLING],          "icon_installing" },
+    { &gBackgroundIcon[BACKGROUND_ICON_ERROR],               "icon_error" },
+    { &gBackgroundIcon[BACKGROUND_ICON_CLOCKWORK],           "icon_clockwork" },
+    { &gBackgroundIcon[BACKGROUND_ICON_CID],                 "icon_cid" },
     { &gBackgroundIcon[BACKGROUND_ICON_FIRMWARE_INSTALLING], "icon_firmware_install" },
-    { &gBackgroundIcon[BACKGROUND_ICON_FIRMWARE_ERROR], "icon_firmware_error" },
-    { &gProgressBarEmpty,               "progress_empty" },
-    { &gProgressBarFill,                "progress_fill" },
-    { &gBackground,                "stitch" },
-    { NULL,                             NULL },
+    { &gBackgroundIcon[BACKGROUND_ICON_FIRMWARE_ERROR],      "icon_firmware_error" },
+    { &gProgressBarEmpty,                                    "progress_empty" },
+    { &gProgressBarFill,                                     "progress_fill" },
+    { &gBackground,                                          "stitch" },
+    { NULL,                                                  NULL },
 };
 
 static int gCurrentIcon = 0;
 static int gInstallingFrame = 0;
+
+static struct timeval lastprogupd = (struct timeval) {0};
 
 static enum ProgressBarType {
     PROGRESSBAR_TYPE_NONE,
@@ -100,48 +115,55 @@ static enum ProgressBarType {
 } gProgressBarType = PROGRESSBAR_TYPE_NONE;
 
 // Progress bar scope of current operation
-static float gProgressScopeStart = 0, gProgressScopeSize = 0, gProgress = 0;
-static double gProgressScopeTime, gProgressScopeDuration;
+static float gProgressScopeStart = 0.0;
+static float gProgressScopeSize = 0.0;
+static float gProgress = 0.0;
+static double gProgressScopeTime;
+static double gProgressScopeDuration;
 
 // Set to 1 when both graphics pages are the same (except for the progress bar)
 static int gPagesIdentical = 0;
 
 // Log text overlay, displayed when a magic key is pressed
 static char text[MAX_ROWS][MAX_COLS];
-static int text_cols = 0, text_rows = 0;
-static int text_col = 0, text_row = 0, text_top = 0;
+static int text_cols = 0;
+static int text_rows = 0;
+static int text_col = 0;
+static int text_row = 0;
+static int text_top = 0;
 static int show_text = 0;
-static int show_text_ever = 0;   // has show_text ever been 1?
+static int show_text_ever = 0; // i.e. has show_text ever been 1?
 
 static char menu[MENU_MAX_ROWS][MENU_MAX_COLS];
+static int menuTextColor[4] = {MENU_TEXT_COLOR};
 static int show_menu = 0;
-static int menu_top = 0, menu_items = 0, menu_sel = 0;
-static int menu_show_start = 0;             // this is line which menu display is starting at
+static int menu_top = 0;
+static int menu_items = 0;
+static int menu_sel = 0;
+static int menu_show_start = 0; // line at which menu display starts
 static int max_menu_rows;
-//彩虹模式 By Xs(weibo.com/acexs)
-static int cur_rainbow_color = 0;
+
+static unsigned cur_rainbow_color = 0;
 static int gRainbowMode = 0;
-//End
 
 // Key event input queue
 static pthread_mutex_t key_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t key_queue_cond = PTHREAD_COND_INITIALIZER;
 static int key_queue[256], key_queue_len = 0;
-static unsigned long key_last_repeat[KEY_MAX + 1], key_press_time[KEY_MAX + 1];
+static unsigned long key_last_repeat[KEY_MAX + 1];
+static unsigned long key_press_time[KEY_MAX + 1];
 static volatile char key_pressed[KEY_MAX + 1];
 
+// Prototypes for static functions that are used before defined
 static void update_screen_locked(void);
-int get_batt_stats(void);//电量时间显示
+static int ui_wait_key_with_repeat();
+static void ui_rainbow_mode();
 
 #ifdef BOARD_TOUCH_RECOVERY
 #include "../../vendor/koush/recovery/touch.c"
-#else
-#ifdef BOARD_RECOVERY_SWIPE
-#include "swipe.c"
-#endif
 #endif
 
-// Return the current time as a double (including fractions of a second).
+// Current time
 static double now() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -165,21 +187,16 @@ static void draw_install_overlay_locked(int frame) {
 
 // Clear the screen and draw the currently selected background icon (if any).
 // Should only be called with gUpdateMutex locked.
-static void draw_background_locked(int icon)
-{
+static void draw_background_locked(int icon) {
     gPagesIdentical = 0;
-    // gr_color(0, 0, 0, 255);
-    // gr_fill(0, 0, gr_fb_width(), gr_fb_height());
 
-    {
-        int bw = gr_get_width(gBackground);
-        int bh = gr_get_height(gBackground);
-        int bx = 0;
-        int by = 0;
-        for (by = 0; by < gr_fb_height(); by += bh) {
-            for (bx = 0; bx < gr_fb_width(); bx += bw) {
-                gr_blit(gBackground, 0, 0, bw, bh, bx, by);
-            }
+    int bw = gr_get_width(gBackground);
+    int bh = gr_get_height(gBackground);
+    int bx = 0;
+    int by = 0;
+    for (by = 0; by < gr_fb_height(); by += bh) {
+        for (bx = 0; bx < gr_fb_width(); bx += bw) {
+            gr_blit(gBackground, 0, 0, bw, bh, bx, by);
         }
     }
 
@@ -196,11 +213,25 @@ static void draw_background_locked(int icon)
     }
 }
 
-// Draw the progress bar (if any) on the screen.  Does not flip pages.
-// Should only be called with gUpdateMutex locked.
-static void draw_progress_locked()
-{
+static void ui_increment_frame() {
+    if (!ui_has_initialized) return;
+    gInstallingFrame =
+        (gInstallingFrame + 1) % ui_parameters.installing_frames;
+}
+
+static long delta_milliseconds(struct timeval from, struct timeval to) {
+    long delta_sec = (to.tv_sec - from.tv_sec)*1000;
+    long delta_usec = (to.tv_usec - from.tv_usec)/1000;
+    return (delta_sec + delta_usec);
+}
+
+// Draw the progress bar (if any) on the screen; does not flip pages
+// Should only be called with gUpdateMutex locked and if ui_has_initialized is true
+static void draw_progress_locked() {
     if (gCurrentIcon == BACKGROUND_ICON_INSTALLING) {
+        // update the installation animation, if active
+        if (ui_parameters.installing_frames > 0)
+            ui_increment_frame();
         draw_install_overlay_locked(gInstallingFrame);
     }
 
@@ -234,87 +265,47 @@ static void draw_progress_locked()
             frame = (frame + 1) % ui_parameters.indeterminate_frames;
         }
     }
+
+    gettimeofday(&lastprogupd, NULL);
 }
 
-#define LEFT_ALIGN 0
-#define CENTER_ALIGN 1
-#define RIGHT_ALIGN 2
-
-static void draw_text_line(int row, const char* t, int align) {
-    int col = 0;
-    if (t[0] != '\0') {
-        int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
-        switch(align)
-        {
-            case LEFT_ALIGN:
-                col = 1;
-                break;
-            case CENTER_ALIGN:
-                col = ((gr_fb_width() - length) / 2);
-                break;
-            case RIGHT_ALIGN:
-                col = gr_fb_width() - length - 1;
-                break;
-        }
-    if (ui_get_rainbow_mode()) ui_rainbow_mode();//彩虹模式 By Xs(weibo.com/acexs)
-     gr_text(col, (row+1)*CHAR_HEIGHT-1, t);
+static void draw_text_line(int row, const char* t) {
+  if (t[0] != '\0') {
+    if (ui_get_rainbow_mode()) ui_rainbow_mode();
+    gr_text(0, (row+1)*CHAR_HEIGHT-1, t, 0);
   }
 }
 
-//#define MENU_TEXT_COLOR 255, 160, 49, 255
-#define MENU_TEXT_COLOR 0, 191, 255, 255
-#define NORMAL_TEXT_COLOR 200, 200, 200, 255
-#define HEADER_TEXT_COLOR MENU_TEXT_COLOR//标题颜色
+void ui_setMenuTextColor(int r, int g, int b, int a) {
+    menuTextColor[0] = r;
+    menuTextColor[1] = g;
+    menuTextColor[2] = b;
+    menuTextColor[3] = a;
+}
 
 // Redraw everything on the screen.  Does not flip pages.
 // Should only be called with gUpdateMutex locked.
-static void draw_screen_locked(void)
-{
-    if (!ui_has_initialized) return;
+static void draw_screen_locked(void) {
+    if (!ui_has_initialized)
+        return;
+
     draw_background_locked(gCurrentIcon);
     draw_progress_locked();
 
     if (show_text) {
-        // don't "disable" the background anymore with this...
-        // gr_color(0, 0, 0, 160);
-        // gr_fill(0, 0, gr_fb_width(), gr_fb_height());
-
         int total_rows = gr_fb_height() / CHAR_HEIGHT;
         int i = 0;
         int j = 0;
-        int row = 0;            // current row that we are drawing on
+        int row = 0; // current row that we are drawing on
         if (show_menu) {
 #ifndef BOARD_TOUCH_RECOVERY
-            gr_color(MENU_TEXT_COLOR);
-
-      int batt_level = 0;
-            batt_level = get_batt_stats();
-            
-            if(batt_level < 20) {
-                gr_color(255, 0, 0, 255);
-            }
-            
-			struct tm *current;
-			time_t now;
-			now = time(NULL) + (3600 * 8); // add 8 hours
-			current = localtime(&now);
-            
-            char batt_text[40];
-            sprintf(batt_text, "[%d%% %02D:%02D]", batt_level, current->tm_hour, current->tm_min);
-            if (now == NULL) { // just in case
-				sprintf(batt_text, "[%d%%]", batt_level);
-			}
-
-            gr_color(MENU_TEXT_COLOR);
-            draw_text_line(0, batt_text, RIGHT_ALIGN);
-
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
             gr_fill(0, (menu_top + menu_sel - menu_show_start) * CHAR_HEIGHT,
                     gr_fb_width(), (menu_top + menu_sel - menu_show_start + 1)*CHAR_HEIGHT+1);
 
             gr_color(HEADER_TEXT_COLOR);
             for (i = 0; i < menu_top; ++i) {
-//                draw_text_line(i, menu[i]);
-                draw_text_line(i, menu[i], LEFT_ALIGN);
+                draw_text_line(i, menu[i]);
                 row++;
             }
 
@@ -323,17 +314,15 @@ static void draw_screen_locked(void)
             else
                 j = menu_items - menu_show_start;
 
-            gr_color(MENU_TEXT_COLOR);
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
             for (i = menu_show_start + menu_top; i < (menu_show_start + menu_top + j); ++i) {
                 if (i == menu_top + menu_sel) {
                     gr_color(255, 255, 255, 255);
-//                    draw_text_line(i - menu_show_start , menu[i]);
-                    draw_text_line(i - menu_show_start , menu[i], LEFT_ALIGN);
-                    gr_color(MENU_TEXT_COLOR);
+                    draw_text_line(i - menu_show_start , menu[i]);
+                    gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
                 } else {
-                    gr_color(MENU_TEXT_COLOR);
-//                    draw_text_line(i - menu_show_start, menu[i]);
-                    draw_text_line(i - menu_show_start, menu[i], LEFT_ALIGN);
+                    gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
+                    draw_text_line(i - menu_show_start, menu[i]);
                 }
                 row++;
                 if (row >= max_menu_rows)
@@ -358,26 +347,37 @@ static void draw_screen_locked(void)
 
         int r;
         for (r = 0; r < (available_rows < MAX_ROWS ? available_rows : MAX_ROWS); r++) {
-//            draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS]);
-            draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS], LEFT_ALIGN);
+            draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS]);
         }
     }
 }
 
 // Redraw everything on the screen and flip the screen (make it visible).
 // Should only be called with gUpdateMutex locked.
-static void update_screen_locked(void)
-{
-    if (!ui_has_initialized) return;
+static void update_screen_locked(void) {
+    if (!ui_has_initialized)
+        return;
+
     draw_screen_locked();
     gr_flip();
 }
 
 // Updates only the progress bar, if possible, otherwise redraws the screen.
 // Should only be called with gUpdateMutex locked.
-static void update_progress_locked(void)
-{
-    if (!ui_has_initialized) return;
+static void update_progress_locked(void) {
+    if (!ui_has_initialized)
+        return;
+
+    // set minimum delay between progress updates if we have a text overlay
+    // exception: gProgressScopeDuration != 0: to keep zip installer refresh behavior
+    struct timeval curtime;
+    gettimeofday(&curtime, NULL);
+    long delta_ms = delta_milliseconds(lastprogupd, curtime);
+    if (show_text && gProgressScopeDuration == 0 && lastprogupd.tv_sec > 0
+            && delta_ms < UI_MIN_PROG_DELTA_MS) {
+        return;
+    }
+
     if (show_text || !gPagesIdentical) {
         draw_screen_locked();    // Must redraw the whole screen
         gPagesIdentical = 1;
@@ -388,8 +388,7 @@ static void update_progress_locked(void)
 }
 
 // Keeps the progress bar updated, even when the process is otherwise busy.
-static void *progress_thread(void *cookie)
-{
+static void *progress_thread(void *cookie) {
     double interval = 1.0 / ui_parameters.update_fps;
     for (;;) {
         double start = now();
@@ -397,31 +396,24 @@ static void *progress_thread(void *cookie)
 
         int redraw = 0;
 
-        // update the installation animation, if active
-        // skip this if we have a text overlay (too expensive to update)
-        if (gCurrentIcon == BACKGROUND_ICON_INSTALLING &&
-            ui_parameters.installing_frames > 0 &&
-            !show_text) {
-            gInstallingFrame =
-                (gInstallingFrame + 1) % ui_parameters.installing_frames;
-            redraw = 1;
-        }
-
         // update the progress bar animation, if active
-        // skip this if we have a text overlay (too expensive to update)
-        if (gProgressBarType == PROGRESSBAR_TYPE_INDETERMINATE && !show_text) {
+        // update the spinning cube animation, even if no progress bar
+        if (gProgressBarType == PROGRESSBAR_TYPE_INDETERMINATE ||
+                gCurrentIcon == BACKGROUND_ICON_INSTALLING) {
             redraw = 1;
         }
 
         // move the progress bar forward on timed intervals, if configured
         int duration = gProgressScopeDuration;
-        if (gProgressBarType == PROGRESSBAR_TYPE_NORMAL && duration > 0) {
-            double elapsed = now() - gProgressScopeTime;
-            float progress = 1.0 * elapsed / duration;
-            if (progress > 1.0) progress = 1.0;
-            if (progress > gProgress) {
-                gProgress = progress;
-                redraw = 1;
+        if (gProgressBarType == PROGRESSBAR_TYPE_NORMAL) {
+            if (duration > 0) {
+                double elapsed = now() - gProgressScopeTime;
+                float progress = 1.0 * elapsed / duration;
+                if (progress > 1.0) progress = 1.0;
+                if (progress > gProgress) {
+                    gProgress = progress;
+                    redraw = 1;
+                }
             }
         }
 
@@ -438,9 +430,7 @@ static void *progress_thread(void *cookie)
 }
 
 static int rel_sum = 0;
-
-static int input_callback(int fd, short revents, void *data)
-{
+static int input_callback(int fd, short revents, void *data) {
     struct input_event ev;
     int ret;
     int fake_key = 0;
@@ -452,10 +442,8 @@ static int input_callback(int fd, short revents, void *data)
 #ifdef BOARD_TOUCH_RECOVERY
     if (touch_handle_input(fd, ev))
         return 0;
-#else
-#ifdef BOARD_RECOVERY_SWIPE
-    swipe_handle_input(fd, &ev);
-#endif
+#elif defined(BOARD_RECOVERY_SWIPE)
+    touch_handle_input(fd, &ev);
 #endif
 
     if (ev.type == EV_SYN) {
@@ -515,24 +503,15 @@ static int input_callback(int fd, short revents, void *data)
     }
     pthread_mutex_unlock(&key_queue_mutex);
 
-    if (ev.value > 0 && device_toggle_display(key_pressed, ev.code)) {
-        pthread_mutex_lock(&gUpdateMutex);
-        show_text = !show_text;
-        if (show_text) show_text_ever = 1;
-        update_screen_locked();
-        pthread_mutex_unlock(&gUpdateMutex);
-    }
-
     if (ev.value > 0 && device_reboot_now(key_pressed, ev.code)) {
-        android_reboot(ANDROID_RB_RESTART, 0, 0);
+        reboot_main_system(ANDROID_RB_RESTART, 0, 0);
     }
 
     return 0;
 }
 
 // Reads input events, handles special hot keys, and adds to the key queue.
-static void *input_thread(void *cookie)
-{
+static void *input_thread(void *cookie) {
     for (;;) {
         if (!ev_wait(-1))
             ev_dispatch();
@@ -540,8 +519,7 @@ static void *input_thread(void *cookie)
     return NULL;
 }
 
-void ui_init(void)
-{
+void ui_init(void) {
     ui_has_initialized = 1;
     gr_init();
     ev_init(input_callback, NULL);
@@ -653,16 +631,17 @@ char *ui_copy_image(int icon, int *width, int *height, int *bpp) {
     return ret;
 }
 
-void ui_set_background(int icon)
-{
+void ui_set_background(int icon) {
     pthread_mutex_lock(&gUpdateMutex);
     gCurrentIcon = icon;
     update_screen_locked();
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-void ui_show_indeterminate_progress()
-{
+void ui_show_indeterminate_progress() {
+    if (!ui_has_initialized)
+        return;
+
     pthread_mutex_lock(&gUpdateMutex);
     if (gProgressBarType != PROGRESSBAR_TYPE_INDETERMINATE) {
         gProgressBarType = PROGRESSBAR_TYPE_INDETERMINATE;
@@ -671,8 +650,10 @@ void ui_show_indeterminate_progress()
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-void ui_show_progress(float portion, int seconds)
-{
+void ui_show_progress(float portion, int seconds) {
+    if (!ui_has_initialized)
+        return;
+
     pthread_mutex_lock(&gUpdateMutex);
     gProgressBarType = PROGRESSBAR_TYPE_NORMAL;
     gProgressScopeStart += gProgressScopeSize;
@@ -684,8 +665,10 @@ void ui_show_progress(float portion, int seconds)
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-void ui_set_progress(float fraction)
-{
+void ui_set_progress(float fraction) {
+    if (!ui_has_initialized)
+        return;
+
     pthread_mutex_lock(&gUpdateMutex);
     if (fraction < 0.0) fraction = 0.0;
     if (fraction > 1.0) fraction = 1.0;
@@ -701,39 +684,26 @@ void ui_set_progress(float fraction)
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-void ui_reset_progress()
-{
+void ui_reset_progress() {
+    if (!ui_has_initialized)
+        return;
+
     pthread_mutex_lock(&gUpdateMutex);
     gProgressBarType = PROGRESSBAR_TYPE_NONE;
-    gProgressScopeStart = gProgressScopeSize = 0;
-    gProgressScopeTime = gProgressScopeDuration = 0;
+    gProgressScopeStart = 0;
+    gProgressScopeSize = 0;
+    gProgressScopeTime = 0;
+    gProgressScopeDuration = 0;
     gProgress = 0;
     update_screen_locked();
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-static long delta_milliseconds(struct timeval from, struct timeval to) {
-    long delta_sec = (to.tv_sec - from.tv_sec)*1000;
-    long delta_usec = (to.tv_usec - from.tv_usec)/1000;
-    return (delta_sec + delta_usec);
-}
-
-static struct timeval lastupdate = (struct timeval) {0};
-static int ui_nice = 0;
-static int ui_niced = 0;
-void ui_set_nice(int enabled) {
-    ui_nice = enabled;
-}
-#define NICE_INTERVAL 100
-int ui_was_niced() {
-    return ui_niced;
-}
 int ui_get_text_cols() {
     return text_cols;
 }
 
-void ui_print(const char *fmt, ...)
-{
+void ui_print(const char *fmt, ...) {
     char buf[256];
     va_list ap;
     va_start(ap, fmt);
@@ -743,22 +713,8 @@ void ui_print(const char *fmt, ...)
     if (ui_log_stdout)
         fputs(buf, stdout);
 
-    // if we are running 'ui nice' mode, we do not want to force a screen update
-    // for this line if not necessary.
-    ui_niced = 0;
-    if (ui_nice) {
-        struct timeval curtime;
-        gettimeofday(&curtime, NULL);
-        long ms = delta_milliseconds(lastupdate, curtime);
-        if (ms < NICE_INTERVAL && ms >= 0) {
-            ui_niced = 1;
-            return;
-        }
-    }
-
     // This can get called before ui_init(), so be careful.
     pthread_mutex_lock(&gUpdateMutex);
-    gettimeofday(&lastupdate, NULL);
     if (text_rows > 0 && text_cols > 0) {
         char *ptr;
         for (ptr = buf; *ptr != '\0'; ++ptr) {
@@ -795,13 +751,11 @@ void ui_printlogtail(int nb_lines) {
         }
         fclose(f);
     }
+    ui_print("Return to menu with any key.\n");
     ui_log_stdout=1;
 }
 
-#define MENU_ITEM_HEADER " [*] "
-#define MENU_ITEM_HEADER_LENGTH strlen(MENU_ITEM_HEADER)
-
-int ui_start_menu(char** headers, char** items, int initial_selection) {
+int ui_start_menu(const char** headers, char** items, int initial_selection) {
     int i;
     pthread_mutex_lock(&gUpdateMutex);
     if (text_rows > 0 && text_cols > 0) {
@@ -819,7 +773,7 @@ int ui_start_menu(char** headers, char** items, int initial_selection) {
         }
 
         if (gShowBackButton && !ui_root_menu) {
-            strcpy(menu[i], " [*] +++++Go back+++++");
+            strcpy(menu[i], " - +++++Go Back+++++");
             ++i;
         }
 
@@ -872,24 +826,21 @@ void ui_end_menu() {
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-int ui_text_visible()
-{
+int ui_text_visible() {
     pthread_mutex_lock(&gUpdateMutex);
     int visible = show_text;
     pthread_mutex_unlock(&gUpdateMutex);
     return visible;
 }
 
-int ui_text_ever_visible()
-{
+int ui_text_ever_visible() {
     pthread_mutex_lock(&gUpdateMutex);
     int ever_visible = show_text_ever;
     pthread_mutex_unlock(&gUpdateMutex);
     return ever_visible;
 }
 
-void ui_show_text(int visible)
-{
+void ui_show_text(int visible) {
     pthread_mutex_lock(&gUpdateMutex);
     show_text = visible;
     if (show_text) show_text_ever = 1;
@@ -897,7 +848,6 @@ void ui_show_text(int visible)
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-// Return true if USB is connected.
 static int usb_connected() {
     int fd = open("/sys/class/android_usb/android0/state", O_RDONLY);
     if (fd < 0) {
@@ -924,27 +874,34 @@ void ui_cancel_wait_key() {
     pthread_mutex_unlock(&key_queue_mutex);
 }
 
-int ui_wait_key()
-{
-    if (boardEnableKeyRepeat) return ui_wait_key_with_repeat();
-    pthread_mutex_lock(&key_queue_mutex);
+int ui_wait_key() {
+    if (boardEnableKeyRepeat)
+        return ui_wait_key_with_repeat();
 
-    // Time out after UI_WAIT_KEY_TIMEOUT_SEC, unless a USB cable is
-    // plugged in.
+    pthread_mutex_lock(&key_queue_mutex);
+    int timeouts = UI_WAIT_KEY_TIMEOUT_SEC;
+
+    // Time out after REFRESH_TIME_USB_INTERVAL seconds to catch volume changes, and loop for
+    // UI_WAIT_KEY_TIMEOUT_SEC to restart a device not connected to USB
     do {
         struct timeval now;
         struct timespec timeout;
         gettimeofday(&now, NULL);
         timeout.tv_sec = now.tv_sec;
         timeout.tv_nsec = now.tv_usec * 1000;
-        timeout.tv_sec += UI_WAIT_KEY_TIMEOUT_SEC;
+        timeout.tv_sec += REFRESH_TIME_USB_INTERVAL;
 
         int rc = 0;
         while (key_queue_len == 0 && rc != ETIMEDOUT) {
             rc = pthread_cond_timedwait(&key_queue_cond, &key_queue_mutex,
                                         &timeout);
+            if (volumes_changed()) {
+                pthread_mutex_unlock(&key_queue_mutex);
+                return REFRESH;
+            }
         }
-    } while (usb_connected() && key_queue_len == 0);
+        timeouts -= REFRESH_TIME_USB_INTERVAL;
+    } while ((timeouts > 0 || usb_connected()) && key_queue_len == 0);
 
     int key = -1;
     if (key_queue_len > 0) {
@@ -955,9 +912,7 @@ int ui_wait_key()
     return key;
 }
 
-// util for ui_wait_key_with_repeat
-int key_can_repeat(int key)
-{
+static int key_can_repeat(int key) {
     int k = 0;
     for (;k < boardNumRepeatableKeys; ++k) {
         if (boardRepeatableKeys[k] == key) {
@@ -968,26 +923,35 @@ int key_can_repeat(int key)
     return 0;
 }
 
-int ui_wait_key_with_repeat()
-{
+static int ui_wait_key_with_repeat() {
     int key = -1;
 
-    // Loop to wait for more keys.
+    // Loop to wait for more keys
     do {
+        int timeouts = UI_WAIT_KEY_TIMEOUT_SEC;
+        int rc = 0;
         struct timeval now;
         struct timespec timeout;
-        gettimeofday(&now, NULL);
-        timeout.tv_sec = now.tv_sec;
-        timeout.tv_nsec = now.tv_usec * 1000;
-        timeout.tv_sec += UI_WAIT_KEY_TIMEOUT_SEC;
-
-        int rc = 0;
         pthread_mutex_lock(&key_queue_mutex);
-        while (key_queue_len == 0 && rc != ETIMEDOUT) {
-            rc = pthread_cond_timedwait(&key_queue_cond, &key_queue_mutex,
-                                        &timeout);
+        while (key_queue_len == 0 && timeouts > 0) {
+            gettimeofday(&now, NULL);
+            timeout.tv_sec = now.tv_sec;
+            timeout.tv_nsec = now.tv_usec * 1000;
+            timeout.tv_sec += REFRESH_TIME_USB_INTERVAL;
+
+            rc = 0;
+            while (key_queue_len == 0 && rc != ETIMEDOUT) {
+                rc = pthread_cond_timedwait(&key_queue_cond, &key_queue_mutex,
+                                            &timeout);
+                if (volumes_changed()) {
+                    pthread_mutex_unlock(&key_queue_mutex);
+                    return REFRESH;
+                }
+            }
+            timeouts -= REFRESH_TIME_USB_INTERVAL;
         }
         pthread_mutex_unlock(&key_queue_mutex);
+
         if (rc == ETIMEDOUT && !usb_connected()) {
             return -1;
         }
@@ -1050,8 +1014,7 @@ int ui_wait_key_with_repeat()
     return key;
 }
 
-int ui_key_pressed(int key)
-{
+int ui_key_pressed(int key) {
     // This is a volatile static array, don't bother locking
     return key_pressed[key];
 }
@@ -1066,8 +1029,7 @@ void ui_set_log_stdout(int enabled) {
     ui_log_stdout = enabled;
 }
 
-int ui_should_log_stdout()
-{
+int ui_should_log_stdout() {
     return ui_log_stdout;
 }
 
@@ -1077,10 +1039,6 @@ void ui_set_show_text(int value) {
 
 void ui_set_showing_back_button(int showBackButton) {
     gShowBackButton = showBackButton;
-}
-
-int ui_get_showing_back_button() {
-    return gShowBackButton;
 }
 
 int ui_is_showing_back_button() {
@@ -1107,15 +1065,7 @@ void ui_delete_line() {
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-void ui_increment_frame() {
-    gInstallingFrame =
-        (gInstallingFrame + 1) % ui_parameters.installing_frames;
-}
-//彩虹模式 By Xs(weibo.com/acexs)
-int ui_get_rainbow_mode() {
-    return gRainbowMode;
-}
-void ui_rainbow_mode() {
+static void ui_rainbow_mode() {
     static int colors[] = { 255, 0, 0,        // red
                             255, 127, 0,      // orange
                             255, 255, 0,      // yellow
@@ -1125,7 +1075,11 @@ void ui_rainbow_mode() {
 
     gr_color(colors[cur_rainbow_color], colors[cur_rainbow_color+1], colors[cur_rainbow_color+2], 255);
     cur_rainbow_color += 3;
-    if (cur_rainbow_color >= sizeof(colors)/sizeof(colors[0])) cur_rainbow_color = 0;
+    if (cur_rainbow_color >= (sizeof(colors) / sizeof(colors[0]))) cur_rainbow_color = 0;
+}
+
+int ui_get_rainbow_mode() {
+    return gRainbowMode;
 }
 
 void ui_set_rainbow_mode(int rainbowMode) {
@@ -1135,31 +1089,7 @@ void ui_set_rainbow_mode(int rainbowMode) {
     update_screen_locked();
     pthread_mutex_unlock(&gUpdateMutex);
 }
-//End
-//battery
-int get_batt_stats(void) {
-    static int level = -1;
-    static time_t nextCheck = 0;
-    struct timeval currentTime;
-    gettimeofday(&currentTime, NULL);
 
-    if (currentTime.tv_sec > nextCheck) {
-    char value[4];
-    FILE * capacity;
-    if ( capacity = fopen("/sys/class/power_supply/battery/capacity","r") ) {
-        fgets(value, 4, capacity);
-        fclose(capacity);
-    } else if ( capacity = fopen("/sys/devices/platform/android-battery/power_supply/android-battery/capacity","r") ) {
-        fgets(value, 4, capacity);
-        fclose(capacity);    
-    }
-    level = atoi(value);
-    if (level > 100)
-        level = 100;
-    if (level < 0)
-        level = 0;
-        nextCheck = currentTime.tv_sec + 30;
-    }
-    return level;
+int is_ui_initialized() {
+    return ui_has_initialized;
 }
-//End

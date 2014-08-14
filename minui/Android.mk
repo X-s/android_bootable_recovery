@@ -5,16 +5,21 @@ LOCAL_SRC_FILES := events.c resources.c
 ifneq ($(BOARD_CUSTOM_GRAPHICS),)
   LOCAL_SRC_FILES += $(BOARD_CUSTOM_GRAPHICS)
 else
-ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
-  LOCAL_SRC_FILES += graphics_cn.c chinese.c #中文调用
-else
-  LOCAL_SRC_FILES += graphics.c  #英文调用
-endif
+  LOCAL_SRC_FILES += graphics.c graphics_overlay.c
 endif
 
 LOCAL_C_INCLUDES +=\
     external/libpng\
     external/zlib
+
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+  LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+  LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+endif
+
+ifeq ($(TARGET_USES_QCOM_BSP), true)
+    LOCAL_CFLAGS += -DMSM_BSP
+endif
 
 LOCAL_MODULE := libminui
 
@@ -37,6 +42,16 @@ endif
 
 ifneq ($(BOARD_USE_CUSTOM_RECOVERY_FONT),)
   LOCAL_CFLAGS += -DBOARD_USE_CUSTOM_RECOVERY_FONT=$(BOARD_USE_CUSTOM_RECOVERY_FONT)
+endif
+
+ifneq ($(TARGET_RECOVERY_LCD_BACKLIGHT_PATH),)
+  LOCAL_CFLAGS += -DRECOVERY_LCD_BACKLIGHT_PATH=$(TARGET_RECOVERY_LCD_BACKLIGHT_PATH)
+endif
+
+# Some devices need kernel headers for graphics
+ifeq ($(TARGET_PREBUILT_KERNEL),)
+  LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+  LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 endif
 
 include $(BUILD_STATIC_LIBRARY)

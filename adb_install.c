@@ -114,7 +114,7 @@ apply_from_adb() {
     pthread_t sideload_thread;
     pthread_create(&sideload_thread, NULL, &adb_sideload_thread, &data);
     
-    static char* headers[] = {  "ADB Sideload",
+    static const char* headers[] = {  "ADB Sideload",
                                 "",
                                 NULL
     };
@@ -151,7 +151,18 @@ apply_from_adb() {
         ui_print("Installation aborted.\n");
     }
 
-    remove(ADB_SIDELOAD_FILENAME);
+#ifdef ENABLE_LOKI
+    else if (loki_support_enabled) {
+        ui_print("Checking if loki-fying is needed");
+        install_status = loki_check();
+        if (install_status != INSTALL_SUCCESS)
+            ui_set_background(BACKGROUND_ICON_ERROR);
+    }
+#endif
 
+    if (install_status == INSTALL_SUCCESS)
+        ui_set_background(BACKGROUND_ICON_NONE);
+
+    remove(ADB_SIDELOAD_FILENAME);
     return install_status;
 }

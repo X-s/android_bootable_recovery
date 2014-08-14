@@ -16,9 +16,9 @@
 
 #include <linux/input.h>
 
-#include "recovery_ui.h"
 #include "common.h"
 #include "extendedcommands.h"
+#include "recovery_ui.h"
 
 char* MENU_HEADERS[] = { NULL };
 
@@ -29,7 +29,6 @@ char* MENU_ITEMS[] = { "reboot system now",
                        "backup and restore",
                        "mounts and storage",
                        "advanced",
-					   "xs tools",//add by xs
                        NULL };
 
 void device_ui_init(UIParameters* ui_parameters) {
@@ -39,6 +38,7 @@ int device_recovery_start() {
     return 0;
 }
 
+// add here any key combo check to reboot device
 int device_reboot_now(volatile char* key_pressed, int key_code) {
     return 0;
 }

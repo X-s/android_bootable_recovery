@@ -18,6 +18,11 @@
 #define RECOVERY_COMMON_H
 
 #include <stdio.h>
+#include <fs_mgr.h>
+
+#define MENU_TEXT_COLOR 0, 191, 255, 255
+#define NORMAL_TEXT_COLOR 200, 200, 200, 255
+#define HEADER_TEXT_COLOR NORMAL_TEXT_COLOR
 
 // Initialize the graphics system.
 void ui_init();
@@ -39,30 +44,39 @@ void ui_printlogtail(int nb_lines);
 
 void ui_delete_line();
 void ui_set_show_text(int value);
-void ui_set_nice(int enabled);
-#define ui_nice_print(...) { ui_set_nice(1); ui_print(__VA_ARGS__); ui_set_nice(0); }
-int ui_was_niced();
 int ui_get_text_cols();
-void ui_increment_frame();
+void ui_setMenuTextColor(int r, int g, int b, int a);
+
+#ifdef ENABLE_LOKI
+extern int loki_support_enabled;
+int loki_check();
+#endif
 
 // Display some header text followed by a menu of items, which appears
 // at the top of the screen (in place of any scrolling ui_print()
 // output, if necessary).
-int ui_start_menu(char** headers, char** items, int initial_selection);
+int ui_start_menu(const char** headers, char** items, int initial_selection);
+
 // Set the menu highlight to the given index, and return it (capped to
 // the range [0..numitems).
 int ui_menu_select(int sel);
+
 // End menu mode, resetting the text overlay so that ui_print()
 // statements will be displayed.
 void ui_end_menu();
 
-int ui_get_showing_back_button();
+int ui_get_selected_item();
+
+int is_ui_initialized();
 void ui_set_showing_back_button(int showBackButton);
-//彩虹模式 By Xs(weibo.com/acexs)
+int ui_is_showing_back_button();
+
+void ui_set_log_stdout(int enabled);
+int ui_should_log_stdout();
+
 int ui_get_rainbow_mode();
-void ui_rainbow_mode();
 void ui_set_rainbow_mode(int rainbowMode);
-//End
+
 // Set the icon (normally the only thing visible besides the progress bar).
 enum {
   BACKGROUND_ICON_NONE,
@@ -114,33 +128,7 @@ void ui_reset_progress();
 #define STRINGIFY(x) #x
 #define EXPAND(x) STRINGIFY(x)
 
-typedef struct {
-    const char* mount_point;  // eg. "/cache".  must live in the root directory.
-
-    const char* fs_type;      // "yaffs2" or "ext4" or "vfat"
-
-    const char* device;       // MTD partition name if fs_type == "yaffs"
-                              // block device if fs_type == "ext4" or "vfat"
-
-    const char* device2;      // alternative device to try if fs_type
-                              // == "ext4" or "vfat" and mounting
-                              // 'device' fails
-
-    long long length;         // (ext4 partition only) when
-                              // formatting, size to use for the
-                              // partition.  0 or negative number
-                              // means to format all but the last
-                              // (that much).
-
-    const char* fs_type2;
-
-    const char* fs_options;
-
-    const char* fs_options2;
-
-    const char* lun;          // (/sdcard, /emmc, /external_sd only) LUN file to
-                              // use when mounting via USB mass storage
-} Volume;
+typedef struct fstab_rec Volume;
 
 typedef struct {
     // number of frames in indeterminate progress bar animation
@@ -164,7 +152,19 @@ typedef struct {
 // fopen a file, mounting volumes and making parent dirs as necessary.
 FILE* fopen_path(const char *path, const char *mode);
 
-int ui_get_selected_item();
-int ui_is_showing_back_button();
+/*
+ * Set performance mode on/off before/after tar compress and extract.
+ * Device must have properly configured init.rc or
+ * init.recovery.{ro.hardware}.rc that enables and disables cores, or
+ * sets other cpu performance settings, when recovery.perf.mode
+ * changes
+ */
+void set_perf_mode(int on);
+
+/*
+ * Initialize mini vold so that recovery can mount, unmount, and format
+ * vold managed storage.
+ */
+void vold_init();
 
 #endif  // RECOVERY_COMMON_H
