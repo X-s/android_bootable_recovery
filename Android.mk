@@ -13,23 +13,29 @@ include $(CLEAR_VARS)
 commands_recovery_local_path := $(LOCAL_PATH)
 # LOCAL_CPP_EXTENSION := .c
 
+#Chinese
+ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
+	chinese := _cn
+endif
+
 LOCAL_SRC_FILES := \
-    recovery.c \
+	 default_recovery_ui$(chinese).c \
+    recovery$(chinese).c \
     bootloader.c \
-    install.c \
+    install$(chinese).c \
     roots.c \
-    ui.c \
+    ui$(chinese).c \
     mounts.c \
-    extendedcommands.c \
-    nandroid.c \
-    nandroid_md5.c \
+    extendedcommands$(chinese).c \
+    nandroid$(chinese).c \
+    nandroid_md5$(chinese).c \
     reboot.c \
     ../../system/core/toolbox/dynarray.c \
     ../../system/core/toolbox/newfs_msdos.c \
     firmware.c \
-    edifyscripting.c \
+    edifyscripting$(chinese).c \
     prop.c \
-    adb_install.c \
+    adb_install$(chinese).c \
     verifier.c \
     ../../system/vold/vdc.c \
     propsrvc/legacy_property_service.c
@@ -127,12 +133,6 @@ ifeq ($(BOARD_CUSTOM_RECOVERY_KEYMAPPING),)
   LOCAL_SRC_FILES += default_recovery_keys.c
 else
   LOCAL_SRC_FILES += $(BOARD_CUSTOM_RECOVERY_KEYMAPPING)
-endif
-
-ifeq ($(BOARD_CUSTOM_RECOVERY_UI),)
-  LOCAL_SRC_FILES += default_recovery_ui.c
-else
-  LOCAL_SRC_FILES += $(BOARD_CUSTOM_RECOVERY_UI)
 endif
 
 LOCAL_STATIC_LIBRARIES += libvoldclient libsdcard libminipigz libfsck_msdos
