@@ -1007,8 +1007,9 @@ main(int argc, char **argv) {
 
     device_ui_init(&ui_parameters);
     ui_init();
-    ui_print(EXPAND(RECOVERY_VERSION)"\n");
-
+    ui_print(EXPAND(RECOVERY_WELCOME)"\n");
+    ui_print(EXPAND(RECOVERY_BUILD_DATE)"\n");
+    ui_print(EXPAND(RECOVERY_AUTHOR_INFO)"\n");
 #ifdef BOARD_RECOVERY_SWIPE
 #ifndef BOARD_TOUCH_RECOVERY
     //display directions for swipe controls
