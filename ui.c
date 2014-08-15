@@ -269,11 +269,61 @@ static void draw_progress_locked() {
     gettimeofday(&lastprogupd, NULL);
 }
 
-static void draw_text_line(int row, const char* t) {
-  if (t[0] != '\0') {
+//Battery
+static int get_batt_stats(void) {
+    int level = -1;
+    int i = 0;
+    char value[4];
+    FILE * fd;
+    const char *BATT_FILES[] = {
+    #ifdef CUSTOM_BATT_FILE
+        CUSTOM_BATT_FILE,
+    #endif
+        "/sys/class/power_supply/battery/capacity",
+        "/sys/devices/platform/android-battery/power_supply/android-battery/capacity",
+        NULL
+    };
+
+    while (BATT_FILES[i]) {
+        if ((fd = fopen(BATT_FILES[i], "r"))) {
+            fgets(value, 4, fd);
+            fclose(fd);
+            level = atoi(value);
+            break;
+        }
+        i++;
+    }
+
+    if (level > 100)
+        level = 100;
+    if (level < 0)
+        level = 0;
+    return level;
+}
+
+#define LEFT_ALIGN 0
+#define CENTER_ALIGN 1
+#define RIGHT_ALIGN 2
+
+static void draw_text_line(int row, const char* t, int align) {
+    int col = 0;
+    if (t[0] != '\0') {
     if (ui_get_rainbow_mode()) ui_rainbow_mode();
-    gr_text(0, (row+1)*CHAR_HEIGHT-1, t, 0);
-  }
+        int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
+        switch(align)
+        {
+            case LEFT_ALIGN:
+                col = 1;
+                break;
+            case CENTER_ALIGN:
+                col = ((gr_fb_width() - length) / 2);
+                break;
+            case RIGHT_ALIGN:
+                col = gr_fb_width() - length - 1;
+                break;
+        }
+        gr_text(col, (row+1)*CHAR_HEIGHT-1, t, 0);
+    }
 }
 
 void ui_setMenuTextColor(int r, int g, int b, int a) {
@@ -299,13 +349,32 @@ static void draw_screen_locked(void) {
         int row = 0; // current row that we are drawing on
         if (show_menu) {
 #ifndef BOARD_TOUCH_RECOVERY
-            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
+            int batt_level = 0;
+            char batt_text[40];
+            batt_level = get_batt_stats();
+
+            /*struct tm *current;
+            time_t now;
+            now = time(NULL); // add 2 hours
+            current = localtime(&now);
+            sprintf(batt_text, "[%d%% %02D:%02D]", batt_level, current->tm_hour, current->tm_min);
+            if (now == NULL)*/
+            sprintf(batt_text, " [%d%%]", batt_level);
+
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);//电量颜色
+            //gr_color(0, 255, 0, 255);
+            if (batt_level < 21)
+                gr_color(255, 0, 0, 255);
+            draw_text_line(0, batt_text, RIGHT_ALIGN);
+
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);//电量颜色
             gr_fill(0, (menu_top + menu_sel - menu_show_start) * CHAR_HEIGHT,
                     gr_fb_width(), (menu_top + menu_sel - menu_show_start + 1)*CHAR_HEIGHT+1);
 
-            gr_color(HEADER_TEXT_COLOR);
+            //gr_color(HEADER_TEXT_COLOR);
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);//标题颜色
             for (i = 0; i < menu_top; ++i) {
-                draw_text_line(i, menu[i]);
+                draw_text_line(i, menu[i], LEFT_ALIGN);
                 row++;
             }
 
@@ -318,11 +387,11 @@ static void draw_screen_locked(void) {
             for (i = menu_show_start + menu_top; i < (menu_show_start + menu_top + j); ++i) {
                 if (i == menu_top + menu_sel) {
                     gr_color(255, 255, 255, 255);
-                    draw_text_line(i - menu_show_start , menu[i]);
+                    draw_text_line(i - menu_show_start , menu[i], LEFT_ALIGN);
                     gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
                 } else {
                     gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
-                    draw_text_line(i - menu_show_start, menu[i]);
+                    draw_text_line(i - menu_show_start, menu[i], LEFT_ALIGN);
                 }
                 row++;
                 if (row >= max_menu_rows)
@@ -347,7 +416,7 @@ static void draw_screen_locked(void) {
 
         int r;
         for (r = 0; r < (available_rows < MAX_ROWS ? available_rows : MAX_ROWS); r++) {
-            draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS]);
+            draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS], LEFT_ALIGN);
         }
     }
 }
