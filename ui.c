@@ -53,7 +53,7 @@ static int gShowBackButton = 0;
 #define MAX_ROWS 32
 #define MENU_MAX_COLS 64
 #define MENU_MAX_ROWS 250
-#define MENU_ITEM_HEADER " - "
+#define MENU_ITEM_HEADER " > "
 #define MENU_ITEM_HEADER_LENGTH strlen(MENU_ITEM_HEADER)
 
 #define MIN_LOG_ROWS 3
@@ -773,7 +773,7 @@ int ui_start_menu(const char** headers, char** items, int initial_selection) {
         }
 
         if (gShowBackButton && !ui_root_menu) {
-            strcpy(menu[i], " - +++++Go Back+++++");
+            strcpy(menu[i], " < +++++Go Back+++++");
             ++i;
         }
 
