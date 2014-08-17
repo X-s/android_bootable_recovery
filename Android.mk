@@ -14,7 +14,7 @@ commands_recovery_local_path := $(LOCAL_PATH)
 # LOCAL_CPP_EXTENSION := .c
 
 #Chinese
-ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
+ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
 	chinese := _cn
 endif
 
@@ -65,7 +65,7 @@ endif
 endif
 
 RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.5.0
-ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
+ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
 	RECOVERY_WELCOME := 欢迎使用中文恢复系统
 	RECOVERY_BUILD_DATE := 编译日期: $(shell date +"%Y%m%d")
 	RECOVERY_AUTHOR_INFO := 技术支持：weibo.com/acexs

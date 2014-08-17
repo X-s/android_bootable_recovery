@@ -20,8 +20,7 @@ BOARD_RECOVERY_MTK := true #调用MTK平台备份源码,不添加此配置则调
 BOARD_RECOVERY_SWIPE := true
 ```
 
-3.中文Recovery要在BoardConfig里添加如下代码来调用
+3.中文Recovery
 ```
-BOARD_RECOVERY_LANG_CHINESE := true #中文显示,不添加此项则默认英文界面
-BOARD_USE_CUSTOM_RECOVERY_FONT := \"fontcn30_18x48.h\" #中文字体,英文界面需要更改为英文字体调用
+BOARD_USE_CUSTOM_RECOVERY_FONT := \"fontcn30_18x48.h\" #自动判断中文字体调用
 ```

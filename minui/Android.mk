@@ -5,7 +5,7 @@ LOCAL_SRC_FILES := events.c resources.c
 ifneq ($(BOARD_CUSTOM_GRAPHICS),)
   LOCAL_SRC_FILES += $(BOARD_CUSTOM_GRAPHICS)
 else
-  ifeq ($(BOARD_RECOVERY_LANG_CHINESE),true)
+  ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
     LOCAL_SRC_FILES += graphics_cn.c
   else
     LOCAL_SRC_FILES += graphics.c
