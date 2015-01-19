@@ -113,18 +113,6 @@ static int get_framebuffer(GGLSurface *fb)
         return -1;
     }
 
-    fprintf(stdout, "fb0 reports (possibly inaccurate):\n"
-           "  vi.bits_per_pixel = %d\n"
-           "  vi.red.offset   = %3d   .length = %3d\n"
-           "  vi.green.offset = %3d   .length = %3d\n"
-           "  vi.blue.offset  = %3d   .length = %3d\n"
-           "  fi.smem_len = %d\n",
-           vi.bits_per_pixel,
-           vi.red.offset, vi.red.length,
-           vi.green.offset, vi.green.length,
-           vi.blue.offset, vi.blue.length,
-           fi.smem_len);
-
     has_overlay = target_has_overlay(fi.id);
 
     if(isTargetMdp5())
@@ -160,8 +148,6 @@ static int get_framebuffer(GGLSurface *fb)
          vi.transp.offset  = 0;
          vi.transp.length  = 0;
        }
-       vi.vmode = FB_VMODE_NONINTERLACED;
-       vi.activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
        if (ioctl(fd, FBIOPUT_VSCREENINFO, &vi) < 0) {
            perror("failed to put fb0 info");
            close(fd);
@@ -568,7 +554,7 @@ void gr_fb_blank(bool blank)
         perror("cannot open LCD backlight");
         return;
     }
-    write(fd, blank ? "000" : "250", 3);
+    write(fd, blank ? "000" : "127", 3);
     close(fd);
 #else
     int ret;

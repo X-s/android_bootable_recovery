@@ -1,12 +1,6 @@
+ifeq ($(call my-dir),$(call project-path-for,recovery))
+
 LOCAL_PATH := $(call my-dir)
-
-ifeq ($(RECOVERY_VARIANT),)
-ifeq ($(LOCAL_PATH),bootable/recovery)
-RECOVERY_VARIANT := cwm
-endif
-endif
-
-ifeq ($(RECOVERY_VARIANT),cwm)
 
 include $(CLEAR_VARS)
 
@@ -64,7 +58,7 @@ RECOVERY_NAME := CWM-based Recovery
 endif
 endif
 
-RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.5.0
+RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.5.1
 ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
 	RECOVERY_WELCOME := 欢迎使用中文恢复系统
 	RECOVERY_BUILD_DATE := 编译日期: $(shell date +"%Y%m%d")
@@ -96,7 +90,7 @@ BOARD_RECOVERY_CHAR_HEIGHT := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | c
 
 LOCAL_CFLAGS += -DBOARD_RECOVERY_CHAR_WIDTH=$(BOARD_RECOVERY_CHAR_WIDTH) -DBOARD_RECOVERY_CHAR_HEIGHT=$(BOARD_RECOVERY_CHAR_HEIGHT)
 
-BOARD_RECOVERY_DEFINES := BOARD_RECOVERY_MTK BOARD_RECOVERY_LANG_CHINESE BOARD_HAS_NO_SELECT_BUTTON BOARD_UMS_LUNFILE BOARD_RECOVERY_ALWAYS_WIPES BOARD_RECOVERY_HANDLES_MOUNT BOARD_TOUCH_RECOVERY RECOVERY_EXTEND_NANDROID_MENU TARGET_USE_CUSTOM_LUN_FILE_PATH TARGET_DEVICE TARGET_RECOVERY_FSTAB BOARD_NATIVE_DUALBOOT BOARD_NATIVE_DUALBOOT_SINGLEDATA BOARD_RECOVERY_BLDRMSG_OFFSET
+BOARD_RECOVERY_DEFINES := BOARD_RECOVERY_MTK BOARD_RECOVERY_LANG_CHINESE BOARD_HAS_NO_SELECT_BUTTON BOARD_UMS_LUNFILE BOARD_RECOVERY_ALWAYS_WIPES BOARD_RECOVERY_HANDLES_MOUNT BOARD_TOUCH_RECOVERY RECOVERY_EXTEND_NANDROID_MENU TARGET_USE_CUSTOM_LUN_FILE_PATH TARGET_DEVICE TARGET_RECOVERY_FSTAB BOARD_NATIVE_DUALBOOT BOARD_NATIVE_DUALBOOT_SINGLEDATA
 
 ifndef BOARD_TOUCH_RECOVERY
 BOARD_RECOVERY_DEFINES += BOARD_RECOVERY_SWIPE BOARD_RECOVERY_SWIPE_SWAPXY
@@ -107,6 +101,10 @@ $(foreach board_define,$(BOARD_RECOVERY_DEFINES), \
     $(eval LOCAL_CFLAGS += -D$(board_define)=\"$($(board_define))\") \
   ) \
   )
+
+ifneq ($(BOARD_RECOVERY_BLDRMSG_OFFSET),)
+    LOCAL_CFLAGS += -DBOARD_RECOVERY_BLDRMSG_OFFSET=$(BOARD_RECOVERY_BLDRMSG_OFFSET)
+endif
 
 LOCAL_STATIC_LIBRARIES :=
 
@@ -160,8 +158,6 @@ LOCAL_STATIC_LIBRARIES += libstdc++ libc
 LOCAL_STATIC_LIBRARIES += libselinux
 LOCAL_STATIC_LIBRARIES += libcrypto_static
 
-include $(BUILD_EXECUTABLE)
-
 RECOVERY_LINKS := bu make_ext4fs edify busybox flash_image dump_image mkyaffs2image unyaffs erase_image nandroid reboot volume setprop getprop start stop dedupe minizip setup_adbd fsck_msdos newfs_msdos vdc sdcard pigz
 
 ifeq ($(TARGET_USERIMAGES_USE_F2FS), true)
@@ -170,27 +166,48 @@ endif
 
 # nc is provided by external/netcat
 RECOVERY_SYMLINKS := $(addprefix $(TARGET_RECOVERY_ROOT_OUT)/sbin/,$(RECOVERY_LINKS))
+
+BUSYBOX_LINKS := $(shell cat external/busybox/busybox-minimal.links)
+exclude := tune2fs mke2fs
+RECOVERY_BUSYBOX_SYMLINKS := $(addprefix $(TARGET_RECOVERY_ROOT_OUT)/sbin/,$(filter-out $(exclude),$(notdir $(BUSYBOX_LINKS))))
+
+LOCAL_ADDITIONAL_DEPENDENCIES := \
+    killrecovery.sh \
+    parted \
+    sdparted \
+    su.recovery \
+    install-su.sh \
+    run-su-daemon.sh
+
+LOCAL_ADDITIONAL_DEPENDENCIES += \
+    minivold \
+    recovery_e2fsck \
+    recovery_mke2fs \
+    recovery_tune2fs \
+    mount.exfat_static
+
+LOCAL_ADDITIONAL_DEPENDENCIES += $(RECOVERY_SYMLINKS) $(RECOVERY_BUSYBOX_SYMLINKS)
+
+ifneq ($(TARGET_RECOVERY_DEVICE_MODULES),)
+    LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_RECOVERY_DEVICE_MODULES)
+endif
+
+include $(BUILD_EXECUTABLE)
+
 $(RECOVERY_SYMLINKS): RECOVERY_BINARY := $(LOCAL_MODULE)
-$(RECOVERY_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
+$(RECOVERY_SYMLINKS):
 	@echo "Symlink: $@ -> $(RECOVERY_BINARY)"
 	@mkdir -p $(dir $@)
 	@rm -rf $@
 	$(hide) ln -sf $(RECOVERY_BINARY) $@
 
-ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_SYMLINKS)
-
 # Now let's do recovery symlinks
-BUSYBOX_LINKS := $(shell cat external/busybox/busybox-minimal.links)
-exclude := tune2fs mke2fs
-RECOVERY_BUSYBOX_SYMLINKS := $(addprefix $(TARGET_RECOVERY_ROOT_OUT)/sbin/,$(filter-out $(exclude),$(notdir $(BUSYBOX_LINKS))))
 $(RECOVERY_BUSYBOX_SYMLINKS): BUSYBOX_BINARY := busybox
-$(RECOVERY_BUSYBOX_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
+$(RECOVERY_BUSYBOX_SYMLINKS):
 	@echo "Symlink: $@ -> $(BUSYBOX_BINARY)"
 	@mkdir -p $(dir $@)
 	@rm -rf $@
 	$(hide) ln -sf $(BUSYBOX_BINARY) $@
-
-ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS) 
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := killrecovery.sh
