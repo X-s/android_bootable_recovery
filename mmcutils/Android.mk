@@ -8,7 +8,7 @@ ifeq ($(BOARD_RECOVERY_MTK),true)
 	mmcutils_mtk.c
 else
   LOCAL_SRC_FILES := \
-	mmcutils_qualcomm.c
+	mmcutils.c
 endif
 
 LOCAL_MODULE := libmmcutils
