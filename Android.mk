@@ -61,11 +61,11 @@ endif
 RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.5.1
 ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
 	RECOVERY_WELCOME := 欢迎使用中文恢复系统
-	RECOVERY_BUILD_DATE := 编译日期: $(shell date +"%Y%m%d")
+	RECOVERY_BUILD_DATE := Build Date:$(shell date +"%Y%m%d|%T")
 	RECOVERY_AUTHOR_INFO := 技术支持：weibo.com/acexs
 else
 	RECOVERY_WELCOME := Welcome to use Xs Recovery
-	RECOVERY_BUILD_DATE := Build Date:$(shell date +"%Y%m%d")
+	RECOVERY_BUILD_DATE := Build Date:$(shell date +"%Y%m%d|%T")
 	RECOVERY_AUTHOR_INFO := Technical Support:weibo.com/acexs
 endif
 LOCAL_CFLAGS += -DRECOVERY_WELCOME="$(RECOVERY_WELCOME)"
