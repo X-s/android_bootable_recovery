@@ -76,7 +76,7 @@ static int map_mdp_pixel_format()
 #if defined(RECOVERY_BGRA)
     format = MDP_BGRA_8888;
 #elif defined(RECOVERY_RGBX)
-    format = MDP_RGBA_8888;
+    format = MDP_RGBX_8888;
 #elif defined(RECOVERY_RGBA)
     format = MDP_RGBA_8888;
 #endif
