@@ -10,9 +10,10 @@
 
 源码说明
 
-1.MTK备份
+1.MTK
 ```
-BOARD_RECOVERY_MTK := true #调用MTK平台备份源码,不添加此配置则调用默认备份源码
+BOARD_RECOVERY_MTK := true #65xx调用MTK平台备份源码,不添加此配置则调用默认备份源码
+TARGET_RECOVERY_PIXEL_FORMAT := "RGBA_8888" #67xx颜色配置
 ```
 
 2.滑动触摸要在BoardConfig里添加如下代码来调用
@@ -23,4 +24,10 @@ BOARD_RECOVERY_SWIPE := true
 3.中文Recovery
 ```
 BOARD_USE_CUSTOM_RECOVERY_FONT := \"fontcn30_18x48.h\" #自动判断中文字体调用
+```
+
+4.修复双清缓慢
+```
+BOARD_NO_SECURE_DISCARD := true
+COMMON_GLOBAL_CFLAGS += -DNO_SECURE_DISCARD
 ```
